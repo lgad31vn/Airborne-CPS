@@ -22,6 +22,9 @@ void Decider::analyze(Aircraft* intruder) {
 	Decider::determineActionRequired(intruder);
 }
 
+/*
+* Convert Aircraft::ThreatClassification threats to std::String
+*/
 std::string Decider::getThreatClassStr(Aircraft::ThreatClassification threatClass) {
 	switch (threatClass) {
 	case Aircraft::ThreatClassification::NON_THREAT_TRAFFIC:
@@ -37,27 +40,46 @@ std::string Decider::getThreatClassStr(Aircraft::ThreatClassification threatClas
 	}
 }
 
+/*
+* Analyzes the supplied intruder, determining if the intruder is a threat, and begins the process of
+* determining actions that will avoid potential collisions.
+*/
 void Decider::determineActionRequired(Aircraft* intruder) {
 	intruder->lock.lock();
 	Aircraft intrCopy = *(intruder);
 	intruder->lock.unlock();
 
-	ResolutionConnection* connection = (*activeConnections_)[intrCopy.id];
-	Aircraft::ThreatClassification threatClass = Decider::determineThreatClass(&intrCopy, connection);
-	Sense mySense = tempSense_;
+	ResolutionConnection* connection = (*activeConnections_)[intrCopy.id]; // init a tcp connection
+	Aircraft::ThreatClassification threatClass = Decider::determineThreatClass(&intrCopy, connection); // init threat class
+	Sense userACSense = tempSense_; // init temporary userAC's sense
+	RecommendationRangePair recRange; // init recommendation range
 
-	RecommendationRangePair recRange;
-
+	// if intruder is in RA threshold => Dangerous area 
 	if (threatClass == Aircraft::ThreatClassification::RESOLUTION_ADVISORY) {
 		connection->lock.lock();
-		if (connection->consensusAchieved && (connection->currentSense == Sense::UPWARD || connection->currentSense == Sense::DOWNWARD)) {
-			mySense = connection->currentSense;
-		} else if (tempSense_ == Sense::UNKNOWN) {
-			tempSense_ = mySense = Decider::determineResolutionSense(connection->userPosition.altitude.toUnits(Distance::DistanceUnits::FEET),
+		
+		/* 
+		* if there is a connection between userACand intruderAC
+		* and the connection current sense is NOT UNKNOWN => the intruder has been in the RA area
+		* then assign the temporary mySense to the connection's sense
+		*/
+		if (connection->consensusAchieved && (connection->currentSense == Sense::UPWARD || connection->currentSense == Sense::DOWNWARD)) 
+		{
+			userACSense = connection->currentSense;
+		} 
+		/*
+		* If tempSense_ == UNKNOWN => determine connection's sense based userAC's altitude and intruderAC's altitude
+		* Then send that sense to the intruder (client)
+		*/
+		else if (tempSense_ == Sense::UNKNOWN) 
+		{
+			tempSense_ = userACSense = Decider::determineResolutionSense(connection->userPosition.altitude.toUnits(Distance::DistanceUnits::FEET),
 				intrCopy.positionCurrent.altitude.toUnits(Distance::DistanceUnits::FEET));
-			connection->sendSense(mySense);
+			connection->sendSense(userACSense);
 		}
 		connection->lock.unlock();
+
+		// Init needed variables for Decider::getRecRangePair()
 
 		double userDeltaPosM = connection->userPosition.range(&connection->userPositionOld).toMeters();
 		double userDeltaAltM = connection->userPosition.altitude.toMeters() - connection->userPositionOld.altitude.toMeters();
@@ -66,15 +88,18 @@ void Decider::determineActionRequired(Aircraft* intruder) {
 		double userElapsedTimeS = (double)(connection->userPositionTime - connection->userPositionOldTime).count() / 1000;
 		double intrElapsedTimeS = (double)(intrCopy.positionCurrentTime - intrCopy.positionOldTime).count() / 1000;
 		double slantRangeNmi = abs(connection->userPosition.range(&intrCopy.positionCurrent).toUnits(Distance::DistanceUnits::NMI));
-		double deltaDistanceM = abs(connection->userPositionOld.range(&intrCopy.positionOld).toUnits(Distance::DistanceUnits::METERS))
-			- abs(connection->userPosition.range(&intrCopy.positionCurrent).toUnits(Distance::DistanceUnits::METERS));
+		double deltaDistanceM = abs(connection->userPositionOld.range(&intrCopy.positionOld).toUnits(Distance::DistanceUnits::METERS)) - abs(connection->userPosition.range(&intrCopy.positionCurrent).toUnits(Distance::DistanceUnits::METERS));
 		double closingSpeedKnots = Velocity(deltaDistanceM / intrElapsedTimeS, Velocity::VelocityUnits::METERS_PER_S).toUnits(Velocity::VelocityUnits::KNOTS);
+		double rangeTauS = getModTauS(slantRangeNmi, closingSpeedKnots, getRADmodNmi(connection->userPosition.altitude.toFeet()));
+
 		Velocity userVvel = Velocity(userDeltaAltM / userElapsedTimeS, Velocity::VelocityUnits::METERS_PER_S);
 		Velocity intrVvel = Velocity(intrDeltaAltM / intrElapsedTimeS, Velocity::VelocityUnits::METERS_PER_S);
-		double rangeTauS = getModTauS(slantRangeNmi, closingSpeedKnots, getRADmodNmi(connection->userPosition.altitude.toFeet()));
-		recRange = getRecRangePair(mySense, userVvel.toFeetPerMin(), intrVvel.toFeetPerMin(), connection->userPosition.altitude.toFeet(), intrCopy.positionCurrent.altitude.toFeet(), rangeTauS);
 
-	} else if (threatClass == Aircraft::ThreatClassification::NON_THREAT_TRAFFIC) {
+		recRange = getRecRangePair(userACSense, userVvel.toFeetPerMin(), intrVvel.toFeetPerMin(), connection->userPosition.altitude.toFeet(), intrCopy.positionCurrent.altitude.toFeet(), rangeTauS);
+
+	}
+	else if (threatClass == Aircraft::ThreatClassification::NON_THREAT_TRAFFIC) 
+	{
 		tempSense_ = Sense::UNKNOWN;
 		connection->lock.lock();
 		connection->currentSense = Sense::UNKNOWN;
@@ -94,6 +119,7 @@ void Decider::determineActionRequired(Aircraft* intruder) {
 	intruder->lock.unlock();
 }
 
+/* Determines the appropriate threat classification to the */
 Aircraft::ThreatClassification Decider::determineThreatClass(Aircraft* intrCopy, ResolutionConnection* conn) {
 	conn->lock.lock();
 	LLA userPosition = conn->userPosition;
@@ -129,24 +155,39 @@ Aircraft::ThreatClassification Decider::determineThreatClass(Aircraft* intrCopy,
 
 	Aircraft::ThreatClassification newThreatClass;
 	// if within proximity range
-	if (slantRangeNmi < 6 && abs(altSepFt) < 1200) {
+	if (slantRangeNmi < 6 && abs(altSepFt) < 1200) 
+	{
 		// if passes TA threshold
-		if (closingSpeedKnots > 0
+		if 
+		(
+			closingSpeedKnots > 0 
 			&& (prevThreatClass >= Aircraft::ThreatClassification::TRAFFIC_ADVISORY
-			|| tauPassesTAThreshold(userPosition.altitude.toFeet(), taModTauS, verticalTauS, altSepFt))) {
+			|| tauPassesTAThreshold(userPosition.altitude.toFeet(), taModTauS, verticalTauS, altSepFt))
+		)
+		{
 			// if passes RA threshold
-			if (prevThreatClass == Aircraft::ThreatClassification::RESOLUTION_ADVISORY
-				|| tauPassesRAThreshold(userPosition.altitude.toFeet(), raModTauS, verticalTauS, altSepFt)) {
+			if 
+			(
+				prevThreatClass == Aircraft::ThreatClassification::RESOLUTION_ADVISORY
+				|| tauPassesRAThreshold(userPosition.altitude.toFeet(), raModTauS, verticalTauS, altSepFt)
+			) 
+			{
 				newThreatClass = Aircraft::ThreatClassification::RESOLUTION_ADVISORY;
-			} else {
+			} 
+			else 
+			{
 				// did not pass RA threshold -- Traffic Advisory
 				newThreatClass = Aircraft::ThreatClassification::TRAFFIC_ADVISORY;
 			}
-		} else {
+		} 
+		else 
+		{
 			// did not pass TA threshold -- just Proximity Traffic
 			newThreatClass = Aircraft::ThreatClassification::PROXIMITY_INTRUDER_TRAFFIC;
 		}
-	} else {
+	} 
+	else 
+	{
 		// is not within proximity range
 		newThreatClass = Aircraft::ThreatClassification::NON_THREAT_TRAFFIC;
 	}
@@ -154,76 +195,60 @@ Aircraft::ThreatClassification Decider::determineThreatClass(Aircraft* intrCopy,
 	return newThreatClass;
 }
 
+/* Returns whether the supplied TAUs trigger a TA at this altitude */
 bool Decider::tauPassesTAThreshold(double altFt, double modTauS, double vertTauS, double vSepFt)
 {
-	if (vSepFt > getTAZthrFt(altFt)) {
-		if (altFt < 1000 && modTauS < 20 && vertTauS < 20)
-			return true;
-		else if (altFt < 2350 && modTauS < 25 && vertTauS < 25)
-			return true;
-		else if (altFt < 5000 && modTauS < 30 && vertTauS < 30)
-			return true;
-		else if (altFt < 10000 && modTauS < 40 && vertTauS < 40)
-			return true;
-		else if (altFt < 20000 && modTauS < 45 && vertTauS < 45)
-			return true;
-		else if (altFt >= 20000 && modTauS < 48 && vertTauS < 48)
-			return true;
-		else
-			return false;
-	} else {
-		if (altFt < 1000 && modTauS < 20)
-			return true;
-		else if (altFt < 2350 && modTauS < 25)
-			return true;
-		else if (altFt < 5000 && modTauS < 30)
-			return true;
-		else if (altFt < 10000 && modTauS < 40)
-			return true;
-		else if (altFt < 20000 && modTauS < 45)
-			return true;
-		else if (altFt >= 20000 && modTauS < 48)
-			return true;
-		else
-			return false;
+	if (vSepFt > getTAZthrFt(altFt)) 
+	{
+		if (altFt < 1000 && modTauS < 20 && vertTauS < 20) return true;
+		else if (altFt < 2350 && modTauS < 25 && vertTauS < 25) return true;
+		else if (altFt < 5000 && modTauS < 30 && vertTauS < 30) return true;
+		else if (altFt < 10000 && modTauS < 40 && vertTauS < 40) return true;
+		else if (altFt < 20000 && modTauS < 45 && vertTauS < 45) return true;
+		else if (altFt >= 20000 && modTauS < 48 && vertTauS < 48) return true;
+		else return false;
+	} 
+	else 
+	{
+		if (altFt < 1000 && modTauS < 20) return true;
+		else if (altFt < 2350 && modTauS < 25) return true;
+		else if (altFt < 5000 && modTauS < 30) return true;
+		else if (altFt < 10000 && modTauS < 40) return true;
+		else if (altFt < 20000 && modTauS < 45) return true;
+		else if (altFt >= 20000 && modTauS < 48) return true;
+		else return false;
 	}
 }
 
+/* Returns whether the supplied TAUs trigger a RA at this altitude*/
 bool Decider::tauPassesRAThreshold(double altFt, double modTauS, double vertTauS, double vSepFt)
 {
-	if (vSepFt > getRAZthrFt(altFt)) {
-		if (altFt < 1000)
-			return false;
-		else if (altFt < 2350 && modTauS < 15 && vertTauS < 15)
-			return true;
-		else if (altFt < 5000 && modTauS < 20 && vertTauS < 20)
-			return true;
-		else if (altFt < 10000 && modTauS < 25 && vertTauS < 25)
-			return true;
-		else if (altFt < 20000 && modTauS < 30 && vertTauS < 30)
-			return true;
-		else if (altFt >= 20000 && modTauS < 35 && vertTauS < 35)
-			return true;
-		else
-			return false;
-	} else {
-		if (altFt < 1000)
-			return false;
-		else if (altFt < 2350 && modTauS < 15)
-			return true;
-		else if (altFt < 5000 && modTauS < 20)
-			return true;
-		else if (altFt < 10000 && modTauS < 25)
-			return true;
-		else if (altFt < 20000 && modTauS < 30)
-			return true;
-		else if (altFt >= 20000 && modTauS < 35)
-			return true;
-		else
-			return false;
+	if (vSepFt > getRAZthrFt(altFt)) 
+	{
+		if (altFt < 1000) return false;
+		else if (altFt < 2350 && modTauS < 15 && vertTauS < 15) return true;
+		else if (altFt < 5000 && modTauS < 20 && vertTauS < 20) return true;
+		else if (altFt < 10000 && modTauS < 25 && vertTauS < 25) return true;
+		else if (altFt < 20000 && modTauS < 30 && vertTauS < 30) return true;
+		else if (altFt >= 20000 && modTauS < 35 && vertTauS < 35) return true;
+		else return false;
+	} 
+	else 
+	{
+		if (altFt < 1000) return false;
+		else if (altFt < 2350 && modTauS < 15) return true;
+		else if (altFt < 5000 && modTauS < 20) return true;
+		else if (altFt < 10000 && modTauS < 25) return true;
+		else if (altFt < 20000 && modTauS < 30) return true;
+		else if (altFt >= 20000 && modTauS < 35) return true;
+		else return false;
 	}
 }
 
+/*
+* Determines the sense (Sense::UPWARDS or Sense::DOWNWARDS) that the userAC should use when
+* resolving an RA with the details of the supplied intruding aircraft. 
+*/
 Sense Decider::determineResolutionSense(double userAltFt, double intrAltFt) {
 	if (userAltFt > intrAltFt)
 		return Sense::UPWARD;
@@ -231,76 +256,64 @@ Sense Decider::determineResolutionSense(double userAltFt, double intrAltFt) {
 		return Sense::DOWNWARD;
 }
 
+/* Get altitude limit by feet */
 int Decider::getAlimFt(double altFt) {
-	if (altFt < 1000)
-		return -1;
-	else if (altFt < 20000)
-		return 600;
-	else if (altFt < 42000)
-		return 700;
-	else
-		return 800;
+	if (altFt < 1000) return -1;
+	else if (altFt < 20000) return 600;
+	else if (altFt < 42000) return 700;
+	else return 800;
 }
 
+/* Get RA altitude by feet */
 int Decider::getRAZthrFt(double altFt) {
-	if (altFt < 1000)
-		return -1;
-	else if (altFt < 5000)
-		return 300;
-	else if (altFt < 10000)
-		return 350;
-	else if (altFt < 20000)
-		return 400;
-	else if (altFt < 42000)
-		return 600;
-	else
-		return 700;
+	if (altFt < 1000) return -1;
+	else if (altFt < 5000) return 300;
+	else if (altFt < 10000) return 350;
+	else if (altFt < 20000) return 400;
+	else if (altFt < 42000) return 600;
+	else return 700;
 }
 
+/* Get TA altitude by feet */
 int Decider::getTAZthrFt(double altFt) {
-	if (altFt < 42000)
-		return 850;
-	else
-		return 1200;
+	if (altFt < 42000) return 850;
+	else return 1200;
 }
 
 double Decider::getRADmodNmi(double altFt) {
-	if (altFt < 1000)
-		return 0;
-	else if (altFt < 2350)
-		return .2;
-	else if (altFt < 5000)
-		return .35;
-	else if (altFt < 10000)
-		return .55;
-	else if (altFt < 20000)
-		return .8;
-	else
-		return 1.1;
+	if (altFt < 1000) return 0;
+	else if (altFt < 2350) return .2;
+	else if (altFt < 5000) return .35;
+	else if (altFt < 10000) return .55;
+	else if (altFt < 20000) return .8;
+	else return 1.1;
 }
 
 double Decider::getTADmodNmi(double altFt) {
-	if (altFt < 1000)
-		return .3;
-	else if (altFt < 2350)
-		return .33;
-	else if (altFt < 5000)
-		return .48;
-	else if (altFt < 10000)
-		return .75;
-	else if (altFt < 20000)
-		return 1.0;
-	else
-		return 1.3;
+	if (altFt < 1000) return .3;
+	else if (altFt < 2350) return .33;
+	else if (altFt < 5000) return .48;
+	else if (altFt < 10000) return .75;
+	else if (altFt < 20000) return 1.0;
+	else return 1.3;
 }
 
 double Decider::getModTauS(double rangeNmi, double closureRateKnots, double dmodNmi) {
 	return ((pow(rangeNmi, 2) - pow(dmodNmi, 2)) / (rangeNmi * closureRateKnots)) * 3600;
 }
 
-RecommendationRangePair Decider::getRecRangePair(Sense sense, double userVvelFtPerM, double intrVvelFtPerM, double userAltFt,
-	double intrAltFt, double rangeTauS) {
-
+/* Returns a pair of recommendation ranges as for a Resolution Advisory */
+RecommendationRangePair Decider::getRecRangePair
+(
+	Sense sense, 
+	double userVvelFtPerM, 
+	double intrVvelFtPerM, 
+	double userAltFt, 
+	double intrAltFt, 
+	double rangeTauS
+) 
+{
+	
 	RecommendationRange positive, negative;
 
 	if (sense != Sense::UNKNOWN && rangeTauS > 0.0) {
@@ -363,7 +376,16 @@ RecommendationRangePair Decider::getRecRangePair(Sense sense, double userVvelFtP
 	return RecommendationRangePair{ positive, negative };
 }
 
-double Decider::getVvelForAlim(Sense sense, double altFt, double vsepAtCpaFt, double intrProjAltFt, double rangeTauS) {
+double Decider::getVvelForAlim
+(
+	Sense sense, 
+	double altFt, 
+	double vsepAtCpaFt, 
+	double intrProjAltFt, 
+	double rangeTauS
+) 
+{
+
 	/*char toPrint[1000];
 	sprintf(toPrint, "Sense = %s, alt_ft = %f, vsep_at_cpa_ft = %f, intr_proj_alt_ft = %f, range_tau = %f\n", senseToString(sense), altFt, vsep_at_cpa_ft, intr_proj_alt_ft, range_tau_s);
 	XPLMDebugString(toPrint);*/

@@ -64,24 +64,24 @@ private:
 	concurrency::concurrent_unordered_map<std::string, ResolutionConnection*>* activeConnections_;
 	Aircraft* thisAircraft_;
 
-	/* Temporary storage for the user's aircraft's sense, for use when consensus is not acheived, to prevent Sense flipping */
+	/* Temporary storage for the userAC's sense, for use when consensus is not acheived, to prevent Sense flipping */
 	Sense tempSense_;
 
 	/* Analyzes the supplied intruder, determining if the intruder is a threat, and begins the process of
 	determining actions that will avoid potential collisions. */
 	void determineActionRequired(Aircraft* intruder);
 
-	/* Determines the appropriate threat classification*/
+	/* Determines the appropriate threat classification */
 	Aircraft::ThreatClassification determineThreatClass(Aircraft* intrCopy, ResolutionConnection* conn);
 
-	/* Returns whether the supplied taus trigger a TA at this altitude*/
+	/* Returns whether the supplied TAUs trigger a TA at this altitude */
 	bool tauPassesTAThreshold(double altFt, double modTauS, double vertTauS, double vSepFt);
 
-	/* Returns whether the supplied taus trigger a RA at this altitude*/
+	/* Returns whether the supplied TAUs trigger a RA at this altitude*/
 	bool tauPassesRAThreshold(double altFt, double modTauS, double vertTauS, double vSepFt);
 
-	/* Determines the sense (Sense::UPWARDS or Sense::DOWNWARDS) that the user's aircraft should use when
-	resolving an RA with the details of the supplied intruding aircraft.*/
+	/* Determines the sense (Sense::UPWARDS or Sense::DOWNWARDS) that the userAC should use when
+	resolving an RA with the details of the supplied intruding aircraft. */
 	Sense determineResolutionSense(double userAltFt, double intrAltFt);
 
 	/* Returns a pair of recommendation ranges as for a Resolution Advisory */
