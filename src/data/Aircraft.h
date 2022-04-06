@@ -12,11 +12,13 @@
 class Aircraft
 {
 public:
-	/* From the FAA Advanced Avionics Handbook (p. 97)
-	Non-threat traffic - outside of protected distance and altitude range
-	Proximity intruder traffic - Within protected distance and altitude range, but not considered a threat
-	Traffic Advisory - Within protected range and considered a threat (User should be notified of existence)
-	Resolution Advisory - Within protected range and considered an immediate threat. Issue avoidance recommendation.*/
+	/*  
+		From the FAA Advanced Avionics Handbook (p. 97)
+		Non-threat traffic - outside of protected distance and altitude range
+		Proximity intruder traffic - Within protected distance and altitude range, but not considered a threat
+		Traffic Advisory - Within protected range and considered a threat (User should be notified of existence)
+		Resolution Advisory - Within protected range and considered an immediate threat. Issue avoidance recommendation.
+	*/
 	enum class ThreatClassification { NON_THREAT_TRAFFIC, PROXIMITY_INTRUDER_TRAFFIC, TRAFFIC_ADVISORY, RESOLUTION_ADVISORY };
 
 	Aircraft(Aircraft const & that);

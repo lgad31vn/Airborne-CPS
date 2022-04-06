@@ -25,11 +25,11 @@ public:
 	~ResolutionConnection();
 
 	std::string const intruderMac;
-	std::string const ip;
-	std::string const myMac;
-	int const port;
-
-	volatile bool consensusAchieved;
+	std::string const ip; // userIP
+	std::string const myMac; //userMAC
+	int const port; // listening port
+	 
+	volatile bool consensusAchieved; 
 	volatile Sense currentSense;
 	std::mutex lock;
 	std::chrono::milliseconds lastAnalyzed;
@@ -46,17 +46,17 @@ public:
 	DWORD senseReceiver();
 	int sendSense(Sense);
 private:
-	static int number_of_connections_;
+	static int number_of_connections_; // multiple clients
 
-	std::atomic<bool> running_;
+	std::atomic<bool> running_; 
 	std::atomic<bool> threadStopped_;
 	std::atomic<bool> connected_;
 
-	// sock_ to use in each method, got reset everytime 
-	// openSocket is persistent
+	// sock_ is used in each method, reset everytime 
+	// openSocket is persistent and this represents the client socket in the TCP server (need more clarification on this variable)
 	SOCKET sock_, openSocket_;
-	struct sockaddr_in myAddr_;
-	struct sockaddr_in intruderAddr_;
+	struct sockaddr_in myAddr_; // ipv4 -- TCP server
+	struct sockaddr_in intruderAddr_; //intruders ipv4 -- TCP client
 
 	void resolveSense();
 	void socketDebug(char*, bool);

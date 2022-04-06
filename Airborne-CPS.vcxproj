@@ -193,7 +193,7 @@
       <SubSystem>Console</SubSystem>
       <ImportLibrary>.\Release\32\AirborneCPS.lib</ImportLibrary>
       <AdditionalDependencies>Opengl32.lib;odbc32.lib;odbccp32.lib;XPLM.lib;XPWidgets.lib;glaux.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\Users\Oswego\Desktop\Airborne-CPS\SDK\Libraries\Win</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Users\Oswego\Desktop\Airborne-CPS\Release\32;C:\Users\Oswego\Desktop\Airborne-CPS\SDK\Libraries\Win</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>xcopy "$(SolutionDir)out\x86" "c:\X-Plane 10\Resources\plugins\"  /Y </Command>
