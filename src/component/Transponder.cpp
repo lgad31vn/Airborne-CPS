@@ -1,27 +1,32 @@
 #include "Transponder.h"
-
-
-
 #pragma comment(lib,"WS2_32")
 
 std::string Transponder::macAddress_ = "";
 std::atomic<bool> Transponder::initialized_ = false;
 
-Transponder::Transponder(Aircraft* ac,
+/*
+* All args constrcutor
+*/
+Transponder::Transponder
+(
+	Aircraft* userAC,
 	concurrency::concurrent_unordered_map<std::string, Aircraft*>* intruders,
 	concurrency::concurrent_unordered_map<std::string, ResolutionConnection*>* connections,
-	Decider* decider)
+	Decider* decider
+)
 {
+	// assigning private variables 
 	decider_ = decider;
-	aircraft_ = ac; //userAc
+	aircraft_ = userAC;
 	intrudersMap = intruders;
 	openConnections = connections;
 
+	// XBee start
 	xb = new XBee();
 	enableXBeeRouting = true;
 	myLocation.setID(macAddress_);
 
-	ip = getIpAddr(); // ip of hardware xbee
+	ip = getIpAddr(); // ip of xbee hardware
 	myLocation.setIP(ip);
 
 	sinlen = sizeof(struct sockaddr_in);
@@ -49,6 +54,7 @@ Transponder::Transponder(Aircraft* ac,
 	}
 }
 
+/* create UDP socket */
 void Transponder::createSocket(SOCKET* s, struct sockaddr_in* socketAddr, int addr, int port)
 {
 	socketAddr->sin_addr.s_addr = htonl(addr);
@@ -62,6 +68,7 @@ void Transponder::createSocket(SOCKET* s, struct sockaddr_in* socketAddr, int ad
 	}
 }
 
+/* Cleanup destructor */
 Transponder::~Transponder()
 {
 	communication = 0;
@@ -77,21 +84,18 @@ Transponder::~Transponder()
 }
 
 
-// receiveLocation get the userID and intruderID then apply Transponder::processIntruder if there is any intruder in the udp subnet
-// receiveLocation listens to udp connections
+/*
+* get the userID and intruderID then apply Transponder::processIntruder if there is any intruder in the udp subnet
+*/
 DWORD Transponder::receiveLocation()
 {
-
 	std::string myID;
-	myID = myLocation.getID();	// store myID as a C++ string
-
+	myID = myLocation.getID();
 	std::string intruderID;
 
 
 	while (communication)
 	{
-
-
 		char* buffer = (char*)malloc(MAX_RECEIVE_BUFFER_SIZE);		// allocate a buffer big enough to hold that max possible size
 		memset(buffer, '\0', MAX_RECEIVE_BUFFER_SIZE);				 // fill it with null terminators
 
@@ -158,8 +162,6 @@ DWORD Transponder::receiveLocation()
 				//XPLMDebugString("XB Payload: ");
 				//XPLMDebugString(buffer);
 				//XPLMDebugString("\n");
-				//
-
 
 				int size = std::strlen(buffer);
 				intruderLocation.deserialize(buffer, size);
@@ -188,13 +190,11 @@ DWORD Transponder::receiveLocation()
 }
 
 
-// processIntruder analyze intruder and user
+/* processIntruder analyze intruderAC and userAC */
 DWORD Transponder::processIntruder(std::string intruderID)
 {
 
 	std::chrono::milliseconds msSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-
-
 
 	LLA updatedPosition = { intruderLocation.getLAT(), intruderLocation.getLON(), intruderLocation.getALT(), Angle::AngleUnits::DEGREES, Distance::DistanceUnits::METERS };
 
@@ -206,7 +206,6 @@ DWORD Transponder::processIntruder(std::string intruderID)
 		// Debug Statements to output Intruder MAC and IP addresses to Log
 		std::string debugString = "Intruder MAC : " + intruderLocation.getID() + "\nIntruder IP : " + intruderLocation.getIP() + "\n";
 		XPLMDebugString(debugString.c_str());
-
 
 		intruder = new Aircraft(intruderLocation.getID(), intruderLocation.getIP());
 		
@@ -258,8 +257,7 @@ DWORD Transponder::processIntruder(std::string intruderID)
 	return 0;
 }
 
-// sendLocation is used in Transponder::startBroadcasting
-// sendLocation sends out udp conection
+/*  sends out udp conection */
 DWORD Transponder::sendLocation()
 {
 	while (communication)
@@ -389,10 +387,13 @@ std::string Transponder::getHardwareAddress()
 	return macAddress_;
 }
 
-// IP adress from UDP
+/*
+* IP adress from UDP
+*/
 std::string Transponder::getIpAddr()
 {
-	SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+	// init UDP socket
+	SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0); 
 	std::string googleDnsIp = "8.8.8.8";
 	uint16_t dnsPort = 53;
 

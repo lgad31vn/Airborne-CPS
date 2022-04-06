@@ -37,11 +37,18 @@ class Transponder
 public:
 	/* Calls WSAStartup, which is required to be succesfully run before any networking calls can be made.*/
 	static void initNetworking();
+
+	/* Get user MAC */
 	static std::string getHardwareAddress();
 
+	/* All args constructor */
 	Transponder(Aircraft*, concurrency::concurrent_unordered_map<std::string, Aircraft*>*, concurrency::concurrent_unordered_map<std::string, ResolutionConnection*>*, Decider*);
+	
+	/* Cleanup constructor */
 	~Transponder();
+
 	DWORD receiveLocation(), sendLocation(), keepalive();
+
 	void start();
 
 	/*Calls XBee::InitializeComPort which must be called before using the COM Port*/
@@ -53,7 +60,6 @@ public:
 
 protected:
 	std::string ip;
-	
 
 	SOCKET outSocket;
 	SOCKET inSocket;
@@ -66,9 +72,6 @@ protected:
 
 
 	concurrency::concurrent_unordered_map<std::string, Aircraft*>* intrudersMap;
-
-
-
 
 private:
 	static std::atomic<bool> initialized_;

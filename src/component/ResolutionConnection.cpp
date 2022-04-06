@@ -18,8 +18,14 @@ static DWORD WINAPI startResolutionSender(void* param)
 }
 
 // All args constructor
-ResolutionConnection::ResolutionConnection(std::string const mmac, std::string const imac, std::string const ipAddr, int const portNum, Aircraft* userAc) :
-	myMac(mmac), intruderMac(imac), ip(ipAddr), port(portNum)
+ResolutionConnection::ResolutionConnection
+(
+	std::string const mmac, 
+	std::string const imac, 
+	std::string const ipAddr, 
+	int const portNum, 
+	Aircraft* userAc
+) : myMac(mmac), intruderMac(imac), ip(ipAddr), port(portNum)
 {
 	userPosition = userAc->positionCurrent;
 	userPositionTime = userAc->positionCurrentTime;
@@ -37,7 +43,7 @@ ResolutionConnection::ResolutionConnection(std::string const mmac, std::string c
 	CreateThread(NULL, 0, task, (void*) this, 0, &threadID);
 }
 
-// Disconnect ResolutionConnection()
+/* Cleanup destructor */
 ResolutionConnection::~ResolutionConnection()
 {
 	running_ = false;
@@ -116,7 +122,7 @@ SOCKET ResolutionConnection::acceptIncomingIntruder(int port)
 
 /*
 * An implementation of the ResolutionConnection::acceptIncomingIntruder(int port)
-* accpetSocket is the representation of the client socket in TCP 
+* accpetSocket is the representation of the client socket in the TCP Server
 */
 DWORD ResolutionConnection::senseReceiver()
 {
