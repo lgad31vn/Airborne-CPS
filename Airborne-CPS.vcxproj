@@ -37,6 +37,7 @@
     <ClCompile Include="src\util\MathUtil.cpp" />
     <ClCompile Include="src\util\StringUtil.cpp" />
     <ClCompile Include="src\component\XBee.cpp" />
+    <ClCompile Include="Transponder_TPP.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\component\ArtHorizGaugeRenderer.h" />
@@ -63,6 +64,7 @@
     <ClInclude Include="src\util\MathUtil.h" />
     <ClInclude Include="src\util\StringUtil.h" />
     <ClInclude Include="src\component\XBee.h" />
+    <ClInclude Include="Transponder_TCP.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\rendering\Renderer.inc" />
