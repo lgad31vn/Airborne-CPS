@@ -198,8 +198,8 @@ DWORD Transponder::processIntruder(std::string intruderID)
 
 	LLA updatedPosition = { intruderLocation.getLAT(), intruderLocation.getLON(), intruderLocation.getALT(), Angle::AngleUnits::DEGREES, Distance::DistanceUnits::METERS };
 
-	Aircraft* intruder = (*intrudersMap)[intruderLocation.getID()];
-	if (!intruder) {
+	Aircraft* intruderAC = (*intrudersMap)[intruderLocation.getID()];
+	if (!intruderAC) {
 
 		// if we don't have this intruder already, create it
 
@@ -207,53 +207,53 @@ DWORD Transponder::processIntruder(std::string intruderID)
 		std::string debugString = "Intruder MAC : " + intruderLocation.getID() + "\nIntruder IP : " + intruderLocation.getIP() + "\n";
 		XPLMDebugString(debugString.c_str());
 
-		intruder = new Aircraft(intruderLocation.getID(), intruderLocation.getIP());
+		intruderAC = new Aircraft(intruderLocation.getID(), intruderLocation.getIP());
 		
-		allocatedAircraft_.push_back(intruder); // add the intruder at the end
+		allocatedAircraft_.push_back(intruderAC); // add the intruder at the end
 
 		// Fill in the current values so that the aircraft will not have two wildly different position values
 		// If the position current is not set, position old will get set to LLA::ZERO while position current will
 		// be some real value, so setting the position current here prevents the LLAs from being radically different
-		intruder->positionCurrent = updatedPosition;
-		intruder->positionCurrentTime = msSinceEpoch;
+		intruderAC->positionCurrent = updatedPosition;
+		intruderAC->positionCurrentTime = msSinceEpoch;
 
-		(*intrudersMap)[intruder->id] = intruder;
+		(*intrudersMap)[intruderAC->id] = intruderAC;
 		aircraft_->lock.lock();
 
 		// tcp/ip connection
-		ResolutionConnection* connection = new ResolutionConnection(macAddress_, intruder->id, intruder->ip, ResolutionConnection::K_TCP_PORT, aircraft_);
-		(*openConnections)[intruder->id] = connection;
+		ResolutionConnection* connection = new ResolutionConnection(macAddress_, intruderAC->id, intruderAC->ip, ResolutionConnection::K_TCP_PORT, aircraft_);
+		(*openConnections)[intruderAC->id] = connection;
 	}
 
-	keepAliveMap_[intruder->id] = 10;  // what does 10 mean here? Why 10? 10 what? Why not 9 or 11000000? Magic number alert!
+	keepAliveMap_[intruderAC->id] = 10;  // what does 10 mean here? Why 10? 10 what? Why not 9 or 11000000? Magic number alert!
 
 	// tcp/ip connection
-	ResolutionConnection* conn = (*openConnections)[intruder->id];
+	ResolutionConnection* conn = (*openConnections)[intruderAC->id];
 
 	// lock the aircrafts before manipulate the values
-	intruder->lock.lock();
+	intruderAC->lock.lock();
 	aircraft_->lock.lock();
 	conn->lock.lock();
 
 	// old time
-	intruder->positionOld = intruder->positionCurrent;
+	intruderAC->positionOld = intruderAC->positionCurrent;
 	conn->userPositionOld = conn->userPosition;
-	intruder->positionOldTime = intruder->positionCurrentTime;
+	intruderAC->positionOldTime = intruderAC->positionCurrentTime;
 	conn->userPositionOldTime = conn->userPositionTime;
 
 	//current time
-	intruder->positionCurrent = updatedPosition;
+	intruderAC->positionCurrent = updatedPosition;
 	conn->userPosition = aircraft_->positionCurrent;
-	intruder->positionCurrentTime = msSinceEpoch;
+	intruderAC->positionCurrentTime = msSinceEpoch;
 	conn->userPositionTime = msSinceEpoch;
 
 	// unlock
-	intruder->lock.unlock();
+	intruderAC->lock.unlock();
 	aircraft_->lock.unlock();
 	conn->lock.unlock();
 
 	// analyze intruder to determine which threat class intruder in
-	decider_->analyze(intruder);
+	decider_->analyze(intruderAC);
 	return 0;
 }
 
@@ -364,12 +364,17 @@ std::string Transponder::getHardwareAddress()
 
 		if ((dwRetVal = GetAdaptersInfo(pAdapterInfo, &outBufLen)) == NO_ERROR) {
 			PIP_ADAPTER_INFO pAdapter = pAdapterInfo;
-			while (pAdapter && hardwareAddress.empty()) {
+			
+			while 
+			(
+				pAdapter && 
+				hardwareAddress.empty()
+			) 
+			{
 				sprintf(macAddr, "%02X:%02X:%02X:%02X:%02X:%02X",
 					pAdapterInfo->Address[0], pAdapterInfo->Address[1],
 					pAdapterInfo->Address[2], pAdapterInfo->Address[3],
 					pAdapterInfo->Address[4], pAdapterInfo->Address[5]);
-
 				hardwareAddress = macAddr;
 				pAdapter = pAdapter->Next;
 			}
@@ -384,6 +389,7 @@ std::string Transponder::getHardwareAddress()
 	// print MAC address to log.txt
 	std::string debugString = "My MAC: " + macAddress_ + "\n";
 	XPLMDebugString(debugString.c_str());
+
 	return macAddress_;
 }
 

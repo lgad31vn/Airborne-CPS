@@ -143,7 +143,7 @@ static bool hostile = false;
 static char gVSIPluginDataFile[255];
 static char gAHPluginDataFile[255];
 
-Aircraft* userAircraft;
+Aircraft* userAC;
 
 VSIGaugeRenderer* vsiGaugeRenderer;
 AHGaugeRenderer* ahGaugeRenderer;
@@ -194,6 +194,7 @@ static void myHandleKeyCallback(XPLMWindowID inWindowID, char inKey, XPLMKeyFlag
 
 static int myHandleMouseClickCallback(XPLMWindowID inWindowID, int x, int y, XPLMMouseStatus inMouse, void* inRefcon);
 
+/* This api starts the whole plugin */
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 	/// Handle cross platform differences
 #if IBM
@@ -229,7 +230,6 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 	XPLMAppendMenuItem(menuID, "TCP/IP Config", (void*)XBEE_CONFIG_MENU, 1);
 
 	gXBeeMenuItem = 0;
-
 	/*End of Plugin Menu Creation*/
 
 	/* Now we create a window.  We pass in a rectangle in left, top, right, bottom screen coordinates.  We pass in three callbacks. */
@@ -265,33 +265,39 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 	gExampleGaugeHotKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag, "F9", exampleGaugeHotKey, NULL);
 	hostileToggle = XPLMRegisterHotKey(XPLM_VK_F10, xplm_DownFlag, "F10", hostileGauge, NULL);
 
-	Transponder::initNetworking();
+	// Init WinSock
+	Transponder::initNetworking(); 
+
+	// get MAC
 	std::string myMac = Transponder::getHardwareAddress();
 
-
-
 	LLA currentPos = LLA::ZERO;
-	userAircraft = new Aircraft(myMac, "127.0.0.1", currentPos, Angle::ZERO, Velocity::ZERO, Angle::ZERO, Angle::ZERO);
+	
+	// Init userAC
+	userAC = new Aircraft(myMac, "127.0.0.1", currentPos, Angle::ZERO, Velocity::ZERO, Angle::ZERO, Angle::ZERO);
 	std::chrono::milliseconds msSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	userAircraft->positionCurrentTime = msSinceEpoch;
-	userAircraft->positionOldTime = msSinceEpoch;
+	userAC->positionCurrentTime = msSinceEpoch;
+	userAC->positionOldTime = msSinceEpoch;
 
-	decider = new NASADecider(userAircraft, &openConnections);
+	// Init decider
+	decider = new NASADecider(userAC, &openConnections);
 
-	vsiGaugeRenderer = new VSIGaugeRenderer(gVSIPluginDataFile, decider, userAircraft, &intrudingAircraft);
+	// Init Gauge components
+	vsiGaugeRenderer = new VSIGaugeRenderer(gVSIPluginDataFile, decider, userAC, &intrudingAircraft);
 	vsiGaugeRenderer->loadTextures();
 
-	ahGaugeRenderer = new AHGaugeRenderer(gAHPluginDataFile, decider, userAircraft, &intrudingAircraft);
+	ahGaugeRenderer = new AHGaugeRenderer(gAHPluginDataFile, decider, userAC, &intrudingAircraft);
 	ahGaugeRenderer->loadTextures();
 
 	// start broadcasting location, and listening for aircraft
-	transponder = new Transponder(userAircraft, &intrudingAircraft, &openConnections, decider);
+	transponder = new Transponder(userAC, &intrudingAircraft, &openConnections, decider);
 	transponder->initXBee(3);  // ******* get this value from the Menu ************
 	transponder->start();
 
 	return 1;
 }
 
+/* This api stops and cleans up the plugin */
 PLUGIN_API void	XPluginStop(void) {
 	/// Clean up
 	if (gXBeeMenuItem == 1) {
@@ -319,35 +325,35 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID	inFromWho, int	inMessage, voi
 
 /* The callback responsible for drawing the gauge during the X-Plane gauge drawing phase. */
 int	gaugeDrawingCallback(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon) {
+	
 	// Do the actual drawing, but only if the window is active
-	if (gaugeOnDisplay == NO_GAUGE) {
-		/*
-		* Do nothing. The display window is not active.
-		* */
-
+	if (gaugeOnDisplay == NO_GAUGE) 
+	{
+		/* Do nothing. The display window is not active. */
 	}
-	else if (gaugeOnDisplay == VSI_GAUGE) {
+	else if (gaugeOnDisplay == VSI_GAUGE) 
+	{
 		LLA updated = { Angle{ XPLMGetDatad(latitudeRef), Angle::AngleUnits::DEGREES },
 			Angle{ XPLMGetDatad(longitudeRef), Angle::AngleUnits::DEGREES },
 			Distance{ XPLMGetDatad(altitudeRef), Distance::DistanceUnits::METERS } };
 		Velocity updatedVvel = Velocity(XPLMGetDataf(vertSpeedRef), Velocity::VelocityUnits::FEET_PER_MIN);
 		std::chrono::milliseconds msSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
-		userAircraft->lock.lock();
-		userAircraft->positionOld = userAircraft->positionCurrent;
-		userAircraft->positionOldTime = userAircraft->positionCurrentTime;
+		userAC->lock.lock();
+		userAC->positionOld = userAC->positionCurrent;
+		userAC->positionOldTime = userAC->positionCurrentTime;
 
-		userAircraft->positionCurrent = updated;
-		userAircraft->positionCurrentTime = msSinceEpoch;
+		userAC->positionCurrent = updated;
+		userAC->positionCurrentTime = msSinceEpoch;
 
-		userAircraft->verticalVelocity = updatedVvel;
-		userAircraft->heading = Angle(XPLMGetDataf(headingTrueMagDegRef), Angle::AngleUnits::DEGREES);
-		userAircraft->trueAirspeed = Velocity(XPLMGetDataf(trueAirspeedRef), Velocity::VelocityUnits::METERS_PER_S);
+		userAC->verticalVelocity = updatedVvel;
+		userAC->heading = Angle(XPLMGetDataf(headingTrueMagDegRef), Angle::AngleUnits::DEGREES);
+		userAC->trueAirspeed = Velocity(XPLMGetDataf(trueAirspeedRef), Velocity::VelocityUnits::METERS_PER_S);
 
-		userAircraft->theta = Angle(XPLMGetDataf(thetaRef), Angle::AngleUnits::DEGREES);
-		userAircraft->phi = Angle(XPLMGetDataf(phiRef), Angle::AngleUnits::DEGREES);
+		userAC->theta = Angle(XPLMGetDataf(thetaRef), Angle::AngleUnits::DEGREES);
+		userAC->phi = Angle(XPLMGetDataf(phiRef), Angle::AngleUnits::DEGREES);
 
-		userAircraft->lock.unlock();
+		userAC->lock.unlock();
 
 		drawGLSceneForVSI();
 
@@ -359,21 +365,21 @@ int	gaugeDrawingCallback(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefco
 		Velocity updatedVvel = Velocity(XPLMGetDataf(vertSpeedRef), Velocity::VelocityUnits::FEET_PER_MIN);
 		std::chrono::milliseconds msSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
-		userAircraft->lock.lock();
-		userAircraft->positionOld = userAircraft->positionCurrent;
-		userAircraft->positionOldTime = userAircraft->positionCurrentTime;
+		userAC->lock.lock();
+		userAC->positionOld = userAC->positionCurrent;
+		userAC->positionOldTime = userAC->positionCurrentTime;
 
-		userAircraft->positionCurrent = updated;
-		userAircraft->positionCurrentTime = msSinceEpoch;
+		userAC->positionCurrent = updated;
+		userAC->positionCurrentTime = msSinceEpoch;
 
-		userAircraft->verticalVelocity = updatedVvel;
-		userAircraft->heading = Angle(XPLMGetDataf(headingTrueMagDegRef), Angle::AngleUnits::DEGREES);
-		userAircraft->trueAirspeed = Velocity(XPLMGetDataf(trueAirspeedRef), Velocity::VelocityUnits::METERS_PER_S);
+		userAC->verticalVelocity = updatedVvel;
+		userAC->heading = Angle(XPLMGetDataf(headingTrueMagDegRef), Angle::AngleUnits::DEGREES);
+		userAC->trueAirspeed = Velocity(XPLMGetDataf(trueAirspeedRef), Velocity::VelocityUnits::METERS_PER_S);
 
-		userAircraft->theta = Angle(XPLMGetDataf(thetaRef), Angle::AngleUnits::DEGREES);
-		userAircraft->phi = Angle(XPLMGetDataf(phiRef), Angle::AngleUnits::DEGREES);
+		userAC->theta = Angle(XPLMGetDataf(thetaRef), Angle::AngleUnits::DEGREES);
+		userAC->phi = Angle(XPLMGetDataf(phiRef), Angle::AngleUnits::DEGREES);
 
-		userAircraft->lock.unlock();
+		userAC->lock.unlock();
 
 		drawGLSceneForAH();
 
@@ -382,9 +388,11 @@ int	gaugeDrawingCallback(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefco
 }
 
 
-/* This callback does not do any drawing as such.
+/*
+* This callback does not do any drawing as such.
 * We use the mouse callback below to handle dragging of the window
-* X-Plane will automatically do the redraw. */
+* X-Plane will automatically do the redraw. 
+*/
 void exampleGaugePanelWindowCallback(XPLMWindowID inWindowID, void* inRefcon) {}
 
 /* Our key handling callback does nothing in this plugin.  This is ok;
@@ -400,8 +408,7 @@ int exampleGaugePanelMouseClickCallback(XPLMWindowID inWindowID, int x, int y, X
 
 	int	gDragging = 0;
 
-	if (gaugeOnDisplay == NO_GAUGE)
-		return 0;
+	if (gaugeOnDisplay == NO_GAUGE) return 0;
 
 	/// Get the windows current position
 	XPLMGetWindowGeometry(inWindowID, &left, &top, &right, &bottom);
@@ -490,13 +497,13 @@ void myDrawWindowCallback(XPLMWindowID inWindowID, void* inRefcon) {
 		int offsetYPxls = 40;
 
 		for (auto& iter = intrudingAircraft.cbegin(); iter != intrudingAircraft.cend(); ++iter) {
-			Aircraft* intruder = iter->second;
+			Aircraft* intruderAC = iter->second;
 
-			intruder->lock.lock();
-			LLA const intruderPos = intruder->positionCurrent;
-			LLA const intruderPosOld = intruder->positionOld;
-			std::string intrId = intruder->id;
-			intruder->lock.unlock();
+			intruderAC->lock.lock();
+			LLA const intruderPos = intruderAC->positionCurrent;
+			LLA const intruderPosOld = intruderAC->positionOld;
+			std::string intrId = intruderAC->id;
+			intruderAC->lock.unlock();
 
 			Calculations c = ((NASADecider*)decider)->getCalculations(intrId);
 
@@ -555,9 +562,11 @@ void myDrawWindowCallback(XPLMWindowID inWindowID, void* inRefcon) {
 void myHandleKeyCallback(XPLMWindowID inWindowID, char inKey, XPLMKeyFlags inFlags,
 	char inVirtualKey, void* inRefcon, int losingFocus) {}
 
-/*Our mouse click callback toggles the status of our mouse variable
+/*
+* Our mouse click callback toggles the status of our mouse variable
 * as the mouse is clicked.  We then update our text on the next sim
-* cycle. */
+* cycle. 
+*/
 int myHandleMouseClickCallback(XPLMWindowID inWindowID, int x, int y, XPLMMouseStatus inMouse, void* inRefcon) {
 	/* If we get a down or up, toggle our status click.  We will
 	* never get a down without an up if we accept the down. */
@@ -609,10 +618,8 @@ void CreateXBeeWidget(int x, int y, int w, int h)
 		NULL,									// not in a container
 		xpWidgetClass_MainWindow);
 
-
 	// Add Close Box to the Main Widget.  Other options are available.  See the SDK Documentation.  
 	XPSetWidgetProperty(XBeeWidget, xpProperty_MainWindowHasCloseBoxes, 1);
-
 
 	// Print each line of instructions.
 	for (Index = 0; Index < 50; Index++)
@@ -689,7 +696,6 @@ int	XBeePortNumHandler(XPWidgetMessage  inMessage, XPWidgetID  inWidget, long  i
 		}
 		return 1;
 	}
-
 	return 0;
 }
 
